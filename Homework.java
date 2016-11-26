@@ -9,6 +9,8 @@ import java.util.ArrayList;
 import java.util.Arrays;
 import java.util.List;
 
+import javax.print.Doc;
+
 import org.bson.Document;
 import org.bson.conversions.Bson;
 import org.junit.Test;
@@ -32,19 +34,123 @@ import edu.ufl.alexgre.mongotest.M101J.Helpers;
 public class Homework {
 	
 	@Test
+	public void final_7(){
+		//import data
+		String parentPath = "E:\\CSRelatedCourses\\MongoDB class\\w7\\final7__f7_m101_52e000fde2d423744501d031\\final7";
+		File f1 = new File(parentPath, "albums.json");
+		File f2 = new File(parentPath, "images.json");
+	
+		Helpers.importJsonFile(f1.getAbsolutePath(), "course", "albums");
+		Helpers.importJsonFile(f2.getAbsolutePath(), "course", "images");
+		
+		MongoClient c = new MongoClient(new MongoClientURI("mongodb://localhost:27017"));
+		MongoCollection<Document> coll_al = c.getDatabase("course").getCollection("albums");
+		MongoCollection<Document> coll_im = c.getDatabase("course").getCollection("images");
+		MongoCollection<Document> coll_tmp = c.getDatabase("course").getCollection("temp");
+		
+		coll_tmp.drop();
+		
+		coll_al.createIndex(new BasicDBObject("images", 1));
+		
+		List<BasicDBObject> pipeline = new ArrayList<BasicDBObject>();
+		pipeline.add(new BasicDBObject("$unwind", "$images"));
+		pipeline.add(new BasicDBObject("$group", new BasicDBObject("_id", 
+				new BasicDBObject("album_id", "$_id").append("img_id", "$images"))));
+		AggregateIterable<Document> albumRecords = coll_al.aggregate(pipeline).allowDiskUse(true);	
+		
+		for(Document eachAlbum: albumRecords){
+			coll_tmp.insertOne(eachAlbum);
+			System.out.println("insert 1 record.");
+		}
+		
+		coll_tmp.createIndex(new BasicDBObject("_id.img_id", 1));
+
+//		//test
+//		if(coll_im.find(Filters.eq("_id", 2)).first() != null){
+//			System.out.println(1);
+//		}else{
+//			System.out.println(2);
+//		}
+		
+//		int count = 0;
+		
+		coll_im.createIndex(new BasicDBObject("tags", 1));
+		
+		List<Document> imgs = coll_im.find().into(new ArrayList<Document>());
+		
+		for(Document eachImg: imgs){
+			int id = eachImg.getInteger("_id");
+			if(coll_tmp.find(Filters.eq("_id.img_id", id)).first() == null){
+				coll_im.deleteOne(Filters.eq("_id", id));
+//				System.out.println(id);
+//				count++;
+			}
+		}
+		
+		System.out.println(coll_im.find(Filters.eq("tags", "sunrises")).into(new ArrayList<Document>()).size());
+		
+//		System.out.println(count);
+		
+		coll_tmp.drop();
+		
+		c.close();
+	}
+
+	@Test
+	public void final_3(){
+		MongoClient c = new MongoClient(new MongoClientURI("mongodb://localhost:27017"));
+		MongoCollection<Document> coll = c.getDatabase("course").getCollection("emails");
+		
+		coll.dropIndex(new BasicDBObject("headers.From", "text").append("headers.To", "text"));
+		coll.createIndex(new BasicDBObject("headers.Message-ID", "text"));
+		
+		Bson filter = Filters.eq("headers.Message-ID", "<8147308.1075851042335.JavaMail.evans@thyme>");
+		
+		Helpers.printJson(coll.find(filter).first());
+		
+		coll.updateOne(filter, 
+				Updates.push("headers.To", "mrpotatohead@mongodb.com"));
+		
+		Helpers.printJson(coll.find(filter).first());
+		
+		
+//		List<Document> list = coll.find().limit(10).into(new ArrayList<Document>());
+//		
+//		for(Document doc: list){
+//			Helpers.printJson(doc);
+//		}
+	
+		c.close();
+	}
+	
+	@Test
 	public void final_2(){
 		MongoClient c = new MongoClient(new MongoClientURI("mongodb://localhost:27017"));
 		MongoCollection<Document> coll = c.getDatabase("course").getCollection("emails");
 		
+//		List<Document> list = coll.find().limit(10).into(new ArrayList<Document>());
+		
+//		//create  text index on two fields that we are going to search 
+//		coll.createIndex(new BasicDBObject("headers.From", "text").append("headers.To", "text"));
+		
 		List<BasicDBObject> pipeline = new ArrayList<BasicDBObject>();
+		pipeline.add(new BasicDBObject("$unwind", "$headers.To"));
+		pipeline.add(new BasicDBObject("$group", new BasicDBObject("_id", 
+				new BasicDBObject("_id", "$_id").append("To", "$headers.To").append("From", "$headers.From"))));
+		pipeline.add(new BasicDBObject("$group", new BasicDBObject("_id", new BasicDBObject("To", "$_id.To").append("From", "$_id.From")).
+				append("times", new BasicDBObject("$sum", 1))));
+		pipeline.add(new BasicDBObject("$sort", new BasicDBObject("times", -1)));
+		pipeline.add(new BasicDBObject("$limit", 5));
 		
-		
-		AggregateIterable<Document> res = coll.aggregate(pipeline);
+		AggregateIterable<Document> res = coll.aggregate(pipeline).allowDiskUse(true);
 		
 		for(Document doc: res){
 			Helpers.printJson(doc);
 		}
-
+		
+//		for(Document doc: list){
+//			Helpers.printJson(doc);
+//		}
 		
 		c.close();
 	}
